@@ -1,5 +1,10 @@
 node_modules
 dist
+# Exception: ship compiled core/dist so the plugin works out-of-box
+# after `/plugin install` without forcing the user to run a TS build.
+# node_modules still needs to be installed manually (see README).
+!understand-anything-plugin/packages/core/dist/
+!understand-anything-plugin/packages/core/dist/**
 .understand-anything
 *.tsbuildinfo
 .DS_Store
