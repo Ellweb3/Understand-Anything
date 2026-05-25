@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, resolve, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   AnalyzerPlugin,
   StructuralAnalysis,
@@ -140,14 +141,21 @@ export class TreeSitterPlugin implements AnalyzerPlugin {
 
         const loadGrammar = async () => {
           try {
-            const wasmPath = require.resolve(
-              `${config.treeSitter!.wasmPackage}/${config.treeSitter!.wasmFile}`,
-            );
+            let wasmPath: string;
+            if (config.treeSitter!.localWasmPath) {
+              // Vendored grammar inside the monorepo — resolve relative to packages/core/
+              // (tree-sitter-plugin.ts lives at packages/core/src/plugins/, so package root is ../..)
+              wasmPath = resolve(dirname(fileURLToPath(import.meta.url)), "../..", config.treeSitter!.localWasmPath);
+            } else {
+              wasmPath = require.resolve(
+                `${config.treeSitter!.wasmPackage}/${config.treeSitter!.wasmFile}`,
+              );
+            }
             const lang = await LanguageCls.load(wasmPath);
             this._languages.set(config.id, lang);
 
             // Special handling for TypeScript: also load TSX grammar
-            if (config.id === "typescript") {
+            if (config.id === "typescript" && config.treeSitter!.wasmPackage) {
               try {
                 const tsxWasm = require.resolve(
                   `${config.treeSitter!.wasmPackage}/tree-sitter-tsx.wasm`,
