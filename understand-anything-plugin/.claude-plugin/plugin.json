@@ -1,18 +1,20 @@
 {
   "name": "understand-anything",
-  "description": "AI-powered codebase understanding — analyze, visualize, and explain any project",
-  "version": "2.7.5",
+  "description": "AI-powered codebase understanding — analyze, visualize, and explain any project (Ellweb3 fork: adds Dart/Flutter tree-sitter support on top of Lum1104/Understand-Anything)",
+  "version": "2.7.5-dart.0",
   "author": {
-    "name": "Lum1104"
+    "name": "Lum1104 + Ellweb3 (Dart fork)"
   },
-  "homepage": "https://github.com/Lum1104/Understand-Anything",
-  "repository": "https://github.com/Lum1104/Understand-Anything",
+  "homepage": "https://github.com/Ellweb3/Understand-Anything",
+  "repository": "https://github.com/Ellweb3/Understand-Anything",
   "license": "MIT",
   "keywords": [
     "codebase-analysis",
     "knowledge-graph",
     "architecture",
     "onboarding",
-    "dashboard"
+    "dashboard",
+    "dart",
+    "flutter"
   ]
 }

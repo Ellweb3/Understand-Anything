@@ -1,10 +1,10 @@
 {
   "name": "understand-anything",
   "metadata": {
-    "description": "LLM-powered codebase analysis producing interactive knowledge graphs, guided tours, and deep-dive explanations"
+    "description": "LLM-powered codebase analysis producing interactive knowledge graphs, guided tours, and deep-dive explanations (Ellweb3 fork — adds Dart/Flutter tree-sitter support)"
   },
   "owner": {
-    "name": "Lum1104"
+    "name": "Ellweb3 (fork of Lum1104/Understand-Anything)"
   },
   "plugins": [
     {
