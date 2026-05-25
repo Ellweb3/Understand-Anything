@@ -265,6 +265,47 @@ function loadGoModules(projectRoot, files) {
 }
 
 /**
+ * Load every pubspec.yaml in `files[]` and map its directory to the
+ * Dart/Flutter package's declared name. Reads the file synchronously via
+ * existsSync/readFileSync; non-existent or unparseable manifests are
+ * skipped.
+ *
+ * Returns Map<dir, packageName>. The directory is project-relative POSIX
+ * ('' for project root). A pubspec.yaml at the project root maps to '',
+ * matching the resolver's importerDir convention.
+ */
+function loadDartPackages(projectRoot, files) {
+  const out = new Map();
+  for (const f of files) {
+    const p = toPosix(f.path);
+    const base = p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p;
+    if (base !== 'pubspec.yaml') continue;
+    const absPath = join(projectRoot, p);
+    if (!existsSync(absPath)) continue;
+    let raw;
+    try {
+      raw = readFileSync(absPath, 'utf-8');
+    } catch {
+      continue;
+    }
+    // Match a top-level `name:` key. We don't pull in a YAML parser for
+    // one shallow lookup — the regex anchors at line start with optional
+    // trailing comment to match Dart's strict syntax expectations.
+    let name = '';
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(/^name:\s*([a-zA-Z0-9_]+)\s*(?:#.*)?$/);
+      if (m) {
+        name = m[1];
+        break;
+      }
+    }
+    if (!name) continue;
+    out.set(dirOf(p), name);
+  }
+  return out;
+}
+
+/**
  * Walk up from `startDir` (project-relative POSIX, '' for project root)
  * and return the DEEPEST ancestor directory that exists as a key in
  * `configMap`, or undefined if no ancestor matches.
@@ -332,6 +373,7 @@ function buildResolutionContext(projectRoot, files) {
   const csIndex = buildSuffixIndex(files, p => p.endsWith('.cs'));
 
   const phpAutoloads = loadPhpAutoloads(projectRoot, files);
+  const dartPackages = loadDartPackages(projectRoot, files);
 
   return {
     projectRoot,
@@ -343,6 +385,7 @@ function buildResolutionContext(projectRoot, files) {
     kotlinIndex,
     csIndex,
     phpAutoloads,
+    dartPackages,
     // Dedupe Sets for one-time-per-file warnings. Keyed by importer file
     // path. Mutated by resolvers.
     _warnedNoRustCrateRoot: new Set(),
@@ -1289,6 +1332,69 @@ export function resolveCppImport(rawImport, file, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Dart resolver
+//
+// Dart imports come in three shapes (we ignore `dart:` imports as external):
+//   - `package:my_pkg/foo/bar.dart` — anchor at the directory containing
+//     `pubspec.yaml` whose `name` field equals `my_pkg`; the resolved path
+//     is `<pubspec-dir>/lib/foo/bar.dart`. If no pubspec in this project
+//     declares that name, the import is external (Flutter SDK, third-party)
+//     and we return [].
+//   - `'foo.dart'` / `'./foo.dart'` — relative to importer's directory.
+//   - `'../utils/foo.dart'` — relative with parent traversal.
+//
+// Tree-sitter-dart exposes the URI (already unquoted by our DartExtractor).
+// Part directives (`part 'foo.dart';`, `part of '...';`) are not yet emitted
+// by the extractor; once added they can flow through this same path.
+// ---------------------------------------------------------------------------
+
+export function resolveDartImport(rawImport, file, ctx) {
+  if (!rawImport || typeof rawImport !== 'string') return [];
+  const src = rawImport.trim();
+  if (!src) return [];
+
+  // dart: SDK imports are always external.
+  if (src.startsWith('dart:')) return [];
+
+  const importerDir = dirOf(toPosix(file.path));
+
+  // package:<name>/<path>.dart
+  if (src.startsWith('package:')) {
+    const rest = src.slice('package:'.length);
+    const slashIdx = rest.indexOf('/');
+    if (slashIdx < 1) return [];
+    const pkgName = rest.slice(0, slashIdx);
+    const inPkgPath = rest.slice(slashIdx + 1);
+    if (!pkgName || !inPkgPath) return [];
+
+    // Look up the directory whose pubspec.yaml declares this package name.
+    let pubspecDir = null;
+    for (const [dir, name] of ctx.dartPackages) {
+      if (name === pkgName) {
+        pubspecDir = dir;
+        break;
+      }
+    }
+    if (pubspecDir === null) return []; // external dependency
+
+    // Dart layout: package files live under <pubspec-dir>/lib/. The
+    // package: URI path is package-rooted, not project-rooted.
+    const candidate = pubspecDir
+      ? `${pubspecDir}/lib/${inPkgPath}`
+      : `lib/${inPkgPath}`;
+    return ctx.fileSet.has(candidate) ? [candidate] : [];
+  }
+
+  // Relative import (with or without ./ prefix). Anything else with a
+  // colon we treat as a non-file URI and skip.
+  if (src.includes(':')) return [];
+
+  const cleaned = src.startsWith('./') ? src.slice(2) : src;
+  const resolved = resolveRelative(importerDir, cleaned);
+  return resolved && ctx.fileSet.has(resolved) ? [resolved] : [];
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -1340,6 +1446,9 @@ function resolveImport(imp, file, ctx) {
   }
   if (lang === 'c' || lang === 'cpp') {
     return resolveCppImport(src, file, ctx);
+  }
+  if (lang === 'dart') {
+    return resolveDartImport(src, file, ctx);
   }
   // Ruby is handled via a dedicated pathway because its tree-sitter
   // extractor flattens require vs require_relative into a single field,

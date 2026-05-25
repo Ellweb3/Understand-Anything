@@ -1,14 +1,18 @@
 import { z } from "zod";
 
 // Tree-sitter grammar configuration for a language.
-// Only wasmPackage and wasmFile are needed for grammar loading.
-// The extraction logic in tree-sitter-plugin.ts is currently TS/JS-specific;
-// when grammars for other languages are added, language-specific extractors
-// should be registered via the customAnalyzer escape hatch.
+// Provide EITHER `localWasmPath` (path relative to packages/core/) for grammars
+// vendored inside this monorepo, OR `wasmPackage` + `wasmFile` to resolve from
+// an installed npm package. Language-specific extractors are registered separately
+// via the LanguageExtractor interface (see plugins/extractors/).
 export const TreeSitterConfigSchema = z.object({
-  wasmPackage: z.string(),
-  wasmFile: z.string(),
-});
+  wasmPackage: z.string().optional(),
+  wasmFile: z.string().optional(),
+  localWasmPath: z.string().optional(),
+}).refine(
+  (c) => Boolean(c.localWasmPath) || (Boolean(c.wasmPackage) && Boolean(c.wasmFile)),
+  { message: "TreeSitterConfig requires either localWasmPath OR both wasmPackage and wasmFile" }
+);
 
 export type TreeSitterConfig = z.infer<typeof TreeSitterConfigSchema>;
 
